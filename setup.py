@@ -7,12 +7,15 @@ from setuptools import setup
 from setuptools.command.build_py import build_py
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parents[1]
-ENGINE = REPO_ROOT / "db-combolite"
+REPO_ROOT = HERE.parent
+ENGINE = REPO_ROOT / "combolite-core"
 # The library to bundle: $COMBOLITE_LIB_SRC, else the first studio preset
 # build found (CMakePresets.json), else the older build-shared directory.
 LIB_CANDIDATES = [
     *([Path(os.environ["COMBOLITE_LIB_SRC"])] if os.environ.get("COMBOLITE_LIB_SRC") else []),
+    *([Path(os.environ["COMBOLITE_LIB"])] if os.environ.get("COMBOLITE_LIB") else []),
+    *(REPO_ROOT / f"build-studio-{b}" / "combolite-core" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
+    *(REPO_ROOT / f"build-studio-{b}" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
     *(ENGINE / f"build-studio-{b}" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
     ENGINE / "build-shared" / "libcombolite.so",
 ]

@@ -281,13 +281,15 @@ class NativeBackend(Backend):
         if not resolved_lib:
             # Check package-bundled library and standard build directory locations
             pkg_dir = Path(__file__).resolve().parent
-            repo_root = Path(__file__).resolve().parents[3]
+            studio_root = pkg_dir.parent
+            umbrella_root = studio_root.parent
             candidates = [
                 pkg_dir / "libcombolite.so",
                 pkg_dir / ".libs" / "libcombolite.so",
-                repo_root / "db-combolite" / "build-shared" / "libcombolite.so",
-                repo_root / "db-combolite" / "build-rel" / "libcombolite.so",
-                repo_root / "db-combolite" / "build" / "libcombolite.so",
+                *(umbrella_root / f"build-studio-{b}" / "combolite-core" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
+                *(umbrella_root / f"build-studio-{b}" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
+                *(studio_root / f"build-studio-{b}" / "libcombolite.so" for b in ("cpu", "cuda", "vulkan", "both")),
+                umbrella_root / "combolite-core" / "build-shared" / "libcombolite.so",
                 Path("/usr/local/lib/libcombolite.so"),
                 Path("/usr/lib/libcombolite.so"),
             ]

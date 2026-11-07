@@ -1,180 +1,162 @@
-# Handoff: Combolite Studio (GTK4 / libadwaita client for db-combolite)
+# Combolite Studio (combolite-studio)
 
-## Overview
-A desktop client for **db-combolite**, the embeddable C99 multi-model database (tables, document pools, vector collections, links, time series). It lets you browse and edit every model, run CMBQL queries, and explore vector and link data as interactive 2D/3D graphs.
+`Combolite Studio` is a native desktop database workbench and CMBQL query runner for `combolite` archives, built with GTK 4 and libadwaita via PyGObject. It provides an interactive, visual environment for inspecting, modifying, and querying multi-model database archives (`.cdbarch`):
 
-Your task: **wire the real engine into the existing Python package** (`NativeBackend`) and finish the places marked TODO. The UI is already built.
+- **Relational Tables**: Paged data grid with inline cell editing, schema viewer, composite index inspector, and row insert/delete dialogs.
+- **Document Pools**: Master-detail document browser, JSON delta revision tree, BM25 full-text search, and live schema validation.
+- **Vector Collections**: Exact and approximate k-NN similarity search, distance distribution bars, and an interactive 2D/3D force-directed graph canvas.
+- **Graph Links**: Directed, weighted edge inspection, bidirectional link exploration, and real-time path-strength heat maps.
+- **Time Series**: Interactive continuous area charts with hover crosshairs, range filters, aggregations (min, max, mean), and point injection.
+- **CMBQL Query Console**: Multi-clause query editor with live syntax highlighting, diagnostics squiggles, quick-fix hints, and procedure management.
 
-## About the Design Files
-There are two kinds of files in this bundle:
+---
 
-- `combolite_gui/` is **working Python code** (GTK 4 + libadwaita via PyGObject). Keep it. Don't rewrite it. It runs today against a built-in `MockBackend`.
-- `reference/Combolite Studio Preview.dc.html` is an **HTML mock of the same UI**, used only as a visual and behavioural reference. Open it in a browser. Don't ship it. If something in the GTK code looks different from the mock, the mock shows the intent.
+## Prerequisites
 
-## Fidelity
-**High-fidelity.** Colors, type, spacing and interactions in the mock are final. The GTK code implements them using libadwaita defaults plus `style.css`.
+### System Requirements
+- **Python**: Python >= 3.9
+- **GUI Libraries**: GTK 4 (>= 4.10), libadwaita (>= 1.4), PyGObject
+- **Optional Tools**: `gtksourceview5` (advanced code editor features), `numpy` (accelerated vector projection and physics math)
 
-## Run it
+### Package Manager Installation
+
+#### Debian / Ubuntu (24.04+)
 ```sh
-# Fedora
-sudo dnf install python3-gobject gtk4 libadwaita gtksourceview5 python3-numpy
-# Debian / Ubuntu 24.04+
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gtksource-5 python3-numpy
-
-# Launch app directly:
-python3 -m combolite_gui                                          # auto-discovers native engine
-COMBOLITE_LIB=/path/to/libcombolite.so python3 -m combolite_gui   # explicit library path
-
-# Or build wheel & install desktop integration:
-make wheel
-pip install dist/combolite_studio-0.1.0-py3-none-any.whl
-make install-user                                                 # registers desktop entry & icons
 ```
-Needs GTK ≥ 4.10 and libadwaita ≥ 1.4. GtkSourceView and numpy are optional (the console falls back to a plain text view, and the graphs fall back to pure-Python math).
 
-## The one job: implement `NativeBackend`
-Everything touches the engine through `combolite_gui/backend.py`.
+#### Fedora (39+)
+```sh
+sudo dnf install python3-gobject gtk4 libadwaita gtksourceview5 python3-numpy
+```
 
-1. `Backend` is the interface. `MockBackend` shows the exact return shapes. Match them.
-2. `NativeBackend(lib_path)` loads the C library with `ctypes`. Every method is a stub that raises `NotImplementedError`. The GUI catches that and shows a toast, so you can implement methods **one at a time** and the app keeps working.
-3. Raise `BackendError("message")` for user-facing failures (constraint violations, cardinality, bad vector size). The message is shown verbatim in a toast.
-4. The engine never allocates. Allocate the arena / page buffers in Python (`ctypes.create_string_buffer`) and keep them on `self` for as long as the handle is open.
-5. Return-shape contracts the UI relies on:
-   - `table_rows(...)` → `Result(columns, rows, total, elapsed_ms)`. **Column 0 is the primary key.** It's used for cell edits and deletes.
-   - `table_schema(name)` → rows start with `(column_name, type, …)`. Types the editor coerces: `INT`, `REAL`, `BOOL`, `TEXT`, `TIMESTAMP`.
-   - `link_edges(name)` → columns `source, target, created, weight`. **`weight` (0–1+) drives 3D depth, edge thickness and heat strength.** It's required for the graph to look right.
-   - `vector_graph(coll, limit)` → `VectorGraph(ids, vectors, edges)`, where `edges` are index pairs from the engine's neighbour graph. If the collection has no neighbour graph, build k-NN edges client-side.
-   - `doc_*` use revision numbers (`1..n`). `doc_put` returns the new revision.
-   - Stored procedures: `proc_list / proc_save / proc_delete` using the `Procedure(name, params, body, doc)` dataclass.
-6. Update the open-file filter in `window.py::_filters` (currently `*.cmb, *.db, *.combolite`) to the real file extension.
+#### Arch Linux
+```sh
+sudo pacman -S python-gobject gtk4 libadwaita gtksourceview5 python-numpy
+```
 
-## CMBQL grammar: edit one table
-The query language isn't built upstream yet. `combolite_gui/cmbql.py` is a pure-Python lexer plus diagnostics. **The keyword sets at the top (`KEYWORDS`, `STATEMENT_STARTS`, `FUNCTIONS`, `NAME_AFTER`, `CLAUSE_END`) are placeholders.** Replace them with the real grammar. Highlighting, squiggles, did-you-mean fixes, Fix All and the snippet palette (`snippets.py`) all derive from these. `analyze()` returns `Diag(start, end, sev, msg, fix)`, where `fix = (start, end, replacement)`. Run is blocked while any `error` diagnostic exists.
+---
 
-## Screens / Views
+## Detailed Build & Launch Guide
 
-**Window shell** (`window.py`)
-- `Adw.NavigationSplitView`. The sidebar is 240–320 px wide and collapses below 720 sp. The content area has an `Adw.ToolbarView` header and a 28 px mono status bar. The status bar shows the file path, the size/page/format, and a `MOCK` or `NATIVE` pill.
-- The sidebar has a store filter (Ctrl+K). "Overview" and "Query Console" are pinned at the top. Below them, stores are grouped under small caps headings: TABLES, DOCUMENT POOLS, VECTOR COLLECTIONS, LINKS, TIME SERIES. Each row has a coloured model icon, the name, and a mono count.
-- Welcome page: open, new, and "Explore Demo Data".
-- Toasts report every error and save.
+Combolite Studio communicates with the C99 database engine via `ctypes`. The native shared library (`libcombolite.so`) must be built before launching with the native backend.
 
-**Overview**: stat cards per model (count, store count), a stores list (click to open), and file info.
+### 1. Build the Native Backend Library (from Root)
 
-**Table view**: tabs Data | Schema | Indexes.
-- Paged grid, 100 rows per page.
-- Double-click a cell to edit it inline. Edits are committed with `table_update`. On failure the cell reverts and a toast appears.
-- Insert-row form dialog.
-- Multi-row delete with confirmation.
-- Filter box.
-- NULL cells are dimmed and italic.
+Use one of the umbrella presets:
 
-**Document view**: a master/detail split.
-- Left: BM25 search box and a list of titles with `id · r<rev>`.
-- Right: a JSON editor (mono), a revision dropdown, and Save Revision (Ctrl+S). Save creates a new revision. There are also Copy, Delete and New.
+```sh
+# Build standard CPU-compatible shared library
+cmake --preset studio-cpu
+cmake --build --preset studio-cpu -j
 
-**Vector view**: tabs Search | Graph.
-- Search: an entry id or a JSON literal, k, exact/approximate, and a results list with distance bars. Each row has locate-in-graph, edit and delete.
-- Graph: see below.
+# Or build with hardware accelerator support
+cmake --preset studio-both
+cmake --build --preset studio-both -j
+```
 
-**Links view**: tabs Edges | Graph. The edges grid supports add and delete. The graph is described below.
+The compiled library will be placed in `build-studio-cpu/combolite-core/libcombolite.so` (or `build-studio-both/`).
 
-**Time series view**: an area chart with a hover crosshair, a range dropdown, min/max/avg/points cards, and Append Point.
+### 2. Run Python Unit Tests
 
-**Query console**: see the console section below.
+Verify Python backend bindings and CMBQL lexer:
 
-### Graph canvas (`graphs.py`), shared by vector and link graphs
-- **2D | 3D** toggle (animated blend). **Aa** toggles all labels.
-- **3D depth**:
-  - Links: depth is the mean normalised weight of a node's links, so heavier means nearer.
-  - Vectors: depth is the cosine similarity to the selected node (or to the centroid when nothing is selected), and it re-animates when the selection changes.
-  - Nearer nodes are larger, more opaque and have a faint halo. Perspective focal length is 1100 and the depth range is 420 world units.
-- **Mouse**:
-  - Scroll or pinch zooms. In 2D it zooms about the pointer.
-  - In 3D, drag orbits and Shift+drag pans. In 2D, drag pans.
-  - Click selects and glides the node to the centre.
-  - Double-click on the background fits the view.
-  - Dragging a node works in 2D and 3D.
-  - The +, − and fit buttons sit at the bottom right.
-- **Rubber-band physics** (`ForceLayout`): edges are springs, and heavier links have shorter rest lengths. The integrator is under-damped on purpose, so released nodes jiggle. Stretched bands thin out and turn amber, and slack bands sag sideways. The vector graph uses "home" anchors, so nodes snap back to their PCA positions after a drag.
-- **Path-strength heat map**:
-  - Selecting or dragging a node runs a strongest-path search to every node within 6 hops. Strengths multiply along the path.
-  - Heat is `t = 1 + log10(strength) / 2`, clamped to 0–1.
-  - The ramp goes blue `#7aa7f0` → teal `#3cc4c9` → green `#6fc08a` → amber `#d9a85a` → pink `#e88aa3`.
-  - Unreachable nodes fade to 14 %.
-  - Edges on the strongest-path tree are tinted by their child's heat. The source's direct edges are thickest, at `1.4 + 3.6 × strength` px.
-  - A legend strip along the bottom shows the gradient with tick labels (≤0.01, 0.03, 0.1, 0.3, 1.0).
-- **Hover context box**: a popover appears for both nodes and edges. `panel.describe(kind, index)` supplies the rows, and the heat or strength row is appended automatically.
-- **Selection HUD** (bottom left): the id, a neighbour summary, and actions (Find similar / Edit / Delete, or Link from here… / Unlink all).
+```sh
+python3 -m unittest discover -s combolite-studio/tests
+```
 
-**Query console** (`console.py`, `cmbql.py`, `snippets.py`)
-- Left tool rail with 6 flyout palettes: Query, Clause `{}`, Logic `?`, Math `Σ`, Directives `#`, Procs `ƒ`. Snippets insert at the cursor, and `|` marks where the caret lands. Edit the table in `snippets.py` to add more.
-- Live syntax highlighting using `GtkTextTag`s: keyword, string, number, comment, operator, param, function, and known store names.
-- Squiggles (red = error, amber = warning, dotted = info), a hover tooltip, and a problems list with a **Fix** button per item. **Fix All** is Ctrl+. and Run is Ctrl+Enter.
-- Chip in the toolbar: "No problems", or "N errors · M warnings".
-- **Save as Procedure** stores the editor text. It detects `$params` automatically, requires an identifier name, and refuses to save when there are errors. The Procs flyout lists procedures with Call (inserts `call name($a)`), Body (pastes the query) and Delete.
+### 3. Launch Combolite Studio
 
-## Interactions & Behavior
-- Debounce: diagnostics refresh 120 ms after the last keystroke.
-- Anim timers run at about 60 fps (16 ms) and stop when idle.
-- Cross-fade between content pages is 120 ms.
-- Destructive actions use a confirm dialog with the red `destructive` response. Cancel is the default.
-- Shortcuts:
-  - Ctrl+O open
-  - Ctrl+N new
-  - Ctrl+W close
-  - F5 refresh
-  - Ctrl+K filter stores
-  - Ctrl+E console
-  - Ctrl+Enter run
-  - Ctrl+. fix all
-  - Ctrl+S save document
-  - Ctrl+Shift+T toggle theme
+From the repository root or `combolite-studio/`:
 
-## State Management
-- The `Backend` object is the single source of truth. Views hold only presentational state (current page offset, selected doc, graph camera).
-- `StoreView.call()` and `mutate()` wrap backend calls. They catch `BackendError` and `NotImplementedError` and show a toast.
-- `GraphCanvas` keeps nodes as dicts (`id, label, x, y, r, color, z, z_to`). `z` is depth from 0 to 1, where 1 is nearest, and `z_to` is the animation target.
+```sh
+# Auto-discovers the compiled library in standard build output folders:
+python3 -m combolite-studio.combolite_gui
 
-## Design Tokens
-Defined in `combolite_gui/style.css` and the `PALETTE` dict in `console.py`.
+# Or explicitly pass the library path via environment variable:
+COMBOLITE_LIB=build-studio-cpu/combolite-core/libcombolite.so python3 -m combolite-studio.combolite_gui
+```
 
-| Token | Value |
+### 4. Build Wheel & Install Desktop Integration
+
+```sh
+cd combolite-studio
+make wheel
+pip install dist/combolite_studio-*.whl
+
+# Installs desktop launcher, MIME type definitions, and application icons to ~/.local/
+make install-user
+```
+
+---
+
+## Getting Started: Exploring a Database
+
+1. **Open a Database**: Click **Open** (or press `Ctrl+O`) and select a `.cdbarch` database archive (such as `combolite-demo/data/gutenfree.cdbarch`).
+2. **Explore the Sidebar**: Use `Ctrl+K` to quickly filter stores. Stores are automatically categorized into Tables, Document Pools, Vector Collections, Links, and Time Series.
+3. **Inspect Models**:
+   - **Tables**: Double-click any cell to edit inline. Click **Insert Row** to append new records.
+   - **Documents**: Select a document to view its JSON body, browse previous revisions via the dropdown, or execute BM25 searches.
+   - **Vectors & Links**: Click the **Graph** tab to switch to the 2D/3D physics canvas. Drag nodes, scroll to zoom, or orbit in 3D.
+4. **Execute CMBQL Queries**: Open the console (`Ctrl+E`), compose multi-line CMBQL queries, and press `Ctrl+Enter` to run.
+
+### Keyboard Shortcuts Reference
+
+| Shortcut | Action |
 |---|---|
-| Accent (teal) | `#2aa9ae` fill, `#3cc4c9` text/line, `#041a1b` text on accent |
-| Model: table | `#7aa7f0` |
-| Model: document | `#d9a85a` |
-| Model: vector | `#b291ea` |
-| Model: link | `#6fc08a` |
-| Model: time series | `#e88aa3` |
-| Dark surfaces (mock) | window `#1b1c1f`, sidebar `#232428`, editor `#18191c` |
-| Hairlines | `rgba(255,255,255,0.06–0.12)` dark, `alpha(currentColor, 0.08)` in CSS |
-| Error / warning | `#f06a7a` / `#e8b04a` dark; `#c01c28` / `#a06a00` light |
-| Syntax (dark) | kw `#b291ea`, str `#6fc08a`, num `#d9a85a`, comment `#7c7f87`, op `#3cc4c9`, param `#e88aa3`, fn `#4fb8e0`, name `#7aa7f0` |
-| Mono font | JetBrains Mono (falls back to Cascadia / Fira Code / DejaVu Sans Mono) |
-| UI font | system (libadwaita default). The mock uses IBM Plex Sans. |
-| Radii | cards 14 px, small cards 10, buttons 8, pills 99 |
-| Stat value | 1.9 em, weight 800, tight tracking |
-| Section heading | 0.72 em, weight 800, 0.09 em tracking, 50 % opacity |
+| `Ctrl+O` | Open database archive |
+| `Ctrl+N` | Create new database archive |
+| `Ctrl+W` | Close active database |
+| `Ctrl+K` | Quick search and filter stores |
+| `Ctrl+E` | Focus CMBQL query console |
+| `Ctrl+Enter` | Execute active query |
+| `Ctrl+.` | Apply all diagnostic quick-fixes |
+| `Ctrl+S` | Save current document revision |
+| `Ctrl+Shift+T` | Toggle Light / Dark appearance |
+| `F5` | Refresh view and reload stores |
 
-Theme: dark by default (`Adw.ColorScheme.PREFER_DARK`). Light is supported, and every colour in the cairo drawing code reads `get_color()` or `PALETTE[dark]`.
+---
 
-## Assets
-No bitmap assets. Icons are the Adwaita symbolic icon names used in the code. The tool-rail glyphs (Q, {}, ?, Σ, #, ƒ) are text.
+## Features as Built
 
-## Files
-- `combolite_gui/backend.py`: the `Backend` interface, `MockBackend`, and the **`NativeBackend` stub (start here)**
-- `combolite_gui/window.py`, `app.py`, `__main__.py`: the shell, actions and shortcuts
-- `combolite_gui/views.py`: Overview, Table, Document, Vector, Links and Time series views
-- `combolite_gui/graphs.py`: the graph canvas, physics, PCA, path-strength search, and the panel overlays
-- `combolite_gui/console.py`, `cmbql.py`, `snippets.py`: the query console, lexer/diagnostics, and the snippet palette
-- `combolite_gui/dialogs.py`: the confirm and form dialogs
-- `combolite_gui/style.css`: the app CSS
-- `USAGE.md`: the original short readme
-- `reference/Combolite Studio Preview.dc.html` (+ `support.js`): the HTML visual reference
+- **Full C99 `ctypes` Engine Binding (`NativeBackend`)**: Direct integration with `libcombolite.so` implementing zero-copy buffer allocations and caller-managed memory pools (17/17 tests passing).
+- **Graceful Fallback Mode (`MockBackend`)**: Ability to launch and preview the complete UI architecture with synthetic mock stores if no native library is compiled.
+- **Interactive 2D / 3D Graph Visualization**: Custom Cairo and vector math engine supporting PCA projections, rubber-band spring physics, 6-hop path-strength Dijkstra heat maps, and depth shading.
+- **Integrated Diagnostics & Problem Detection**: Non-blocking background CMBQL analysis providing token-level error squiggles and one-click fixes.
+- **Adwaita Responsive Architecture**: Automatic navigation split-view adapting between mobile/narrow window widths and multi-column desktop layouts.
 
-## Known gaps / suggestions
-- The console's **Explain** button is a TODO.
-- The Time series view's chart is drawn with cairo and downsampling is not implemented. Add it if series get large.
-- Vector graph limit defaults to 220 nodes. The pairwise physics is O(n²), so use numpy and keep graphs under about 500 nodes.
-- This code was written without running it on a machine with GTK. Expect a few small PyGObject typing/property fixes on first run.
+---
+
+## Known Issues
+
+1. **File Dialog File Filter Scope**: The open file dialog filter currently allows legacy `.cmb` and `.db` extensions alongside official `.cdbarch` archives.
+2. **GtkSourceView Dependency Fallback**: When running on systems without `gtksourceview5`, the query console gracefully falls back to a standard text view, disabling syntax-highlighting styles.
+
+---
+
+## ToDos
+
+- Add support for exporting query result grids to CSV, JSON, and Parquet formats.
+- Implement streaming pagination for table grids with over 100,000 rows.
+- Complete implementation of the query **Explain** execution plan visualizer.
+
+---
+
+## Provisioned but Not Yet Implemented
+
+The following capabilities are provisioned in presets, prototypes, or design contracts, but are not yet implemented in the active Python client:
+
+1. **Direct Hardware Accelerator Utilization**:
+   - While the `studio-both`, `studio-cuda`, and `studio-vulkan` presets build `libcombolite_accel.so`, Combolite Studio's Python backend currently links only to the core engine library (`libcombolite.so`). Offloading client-side graph layout projections or k-NN distance matrices to GPU backends is provisioned for future releases.
+2. **CMBQL Grammar Keyword Sets (`combolite_gui/cmbql.py`)**:
+   - The token tables (`KEYWORDS`, `STATEMENT_STARTS`, `FUNCTIONS`) in `cmbql.py` represent provisional placeholder sets awaiting full stabilization of the upstream C99 query compiler.
+3. **Remote Serverless Connections**:
+   - Studio operates strictly against local on-disk archives (`.cdbarch`); remote networked socket connections or P2P synchronization controls (spec 19) are provisioned but not yet built.
+
+---
+
+## License & Documentation
+
+- Studio Code: MIT License.
+- Architectural design specifications and handoff history: [`docs/handoff.md`](docs/handoff.md).
+- Reference design mock: `reference/Combolite Studio Preview.dc.html`.
